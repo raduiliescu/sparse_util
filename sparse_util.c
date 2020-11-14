@@ -60,7 +60,6 @@ int print_holes(const char *filename, int verbose) {
   long data = 0;
   long hole = 0;
 
-
   if (fd < 0) {
     perror("Could not open file");
     return -1;
@@ -129,7 +128,7 @@ int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t
   blk_size = buf.st_blksize;
   file_size = buf.st_size;
   printf("Detected block size %ld file size %ld\n", blk_size, file_size);
-  
+
   blk = malloc(blk_size);
   if (blk < 0) {
     perror("Could not allocate block mem\n");
@@ -223,6 +222,6 @@ int main(int argc, char *argv[]) {
   else {
     print_usage(argv[0]);
   }
-  
+
   return 0;
 }
