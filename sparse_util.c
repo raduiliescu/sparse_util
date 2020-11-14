@@ -95,9 +95,20 @@ int print_holes(const char *filename, int verbose) {
   return 0;
 }
 
-int zero_sparse_file(const char *filename) {
+void generate_char_block(void *block, size_t size, char c) {
+  memset(block, c, size);
+}
+
+void generate_rand_block(void *block, size_t size, char c) {
+  int i;
+  for (i = 0; i < size / (sizeof(int) / sizeof(char)); i++) {
+    ((int *)block)[i] =  rand();
+  }
+}
+
+int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t, char), char c) {
   int fd = open(filename, O_RDWR);  
-  char *zero_block;
+  char *blk;
   struct stat buf;
   off_t blk_size, file_size;
   int ret = 0;
@@ -119,14 +130,14 @@ int zero_sparse_file(const char *filename) {
   file_size = buf.st_size;
   printf("Detected block size %ld file size %ld\n", blk_size, file_size);
   
-  zero_block = malloc(blk_size);
-  if (zero_block < 0) {
+  blk = malloc(blk_size);
+  if (blk < 0) {
     perror("Could not allocate block mem\n");
     ret = -1;
     goto exit_close_fd;
   }
 
-  memset(zero_block, 0, blk_size);
+  generate_block(blk, blk_size, c);
 
   do  {
     int num_writes = 0;
@@ -153,7 +164,7 @@ int zero_sparse_file(const char *filename) {
     lseek(fd, data, SEEK_SET);
     for (i = 0 ; i < num_writes; i++) {
       /* TODO handle the partial write case or do it with mmap */
-      if (write(fd, zero_block, blk_size) < 0) {
+      if (write(fd, blk, blk_size) < 0) {
 	perror("could not zero a block");
 	goto exit_free_close_fd;
       }
@@ -166,7 +177,7 @@ int zero_sparse_file(const char *filename) {
   fsync(fd);
 
  exit_free_close_fd:
-  free(zero_block);
+  free(blk);
  exit_close_fd:
   close(fd);
 
@@ -175,22 +186,30 @@ int zero_sparse_file(const char *filename) {
 }
 
 void print_usage(const char* name) {
-  printf("Usage: %s [-e -c -p -v] filename\n", name);
-    printf("   -e erase sparse file\n");
+  printf("Usage: %s [-e -c -p -v] filename [char_to_fill_data]\n", name);
+    printf("   -e erase sparse file, replace data with char of zeros if no char provided\n");
+    printf("   -r erase sparse file, replace data random values\n");
     printf("   -c create a spare file with data at the end and begining with size 0x%x\n", FILE_SIZE);  
     printf("   -p print sparse file information\n");
     printf("   -v print sparse file information and data as string\n");
 }
 
 int main(int argc, char *argv[]) {
-  if (argc != 3) {
+  if ((argc != 3) && (argc != 4)) {
     print_usage(argv[0]);
 
     return -1;
   }
 
   if (strcmp(argv[1], "-e") == 0) {
-    return zero_sparse_file(argv[2]);
+    char c = 0;
+    if (argc == 4)
+      c = argv[3][0];
+
+    return scrub_sparse_file(argv[2], generate_char_block, c);
+  }
+  else if (strcmp(argv[1], "-r") == 0) {
+    return scrub_sparse_file(argv[2], generate_rand_block, 0);
   }
   else if (strcmp(argv[1], "-c") == 0) {
     return create_sparse_file(argv[2], FILE_SIZE);
