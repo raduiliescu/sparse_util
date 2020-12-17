@@ -55,6 +55,18 @@ void print_file_data(int fd, long from, long size) {
   munmap(map, size);
 }
 
+int print_file_data_from_filename(const char *filename, long from, long size) {
+  int fd = open(filename, O_RDONLY);
+  if (fd < 0) {
+    perror("Could not open file");
+    return -1;
+  }
+
+  print_file_data(fd, from, size);
+
+  return 0;
+}
+
 int print_holes(const char *filename, int verbose) {
   int fd = open(filename, O_RDONLY);
   struct stat buf;
@@ -185,17 +197,20 @@ int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t
   return ret;
 }
 
+
+
 void print_usage(const char* name) {
-  printf("Usage: %s [-e -c -p -v] filename [filesize | char_to_fill_data]\n", name);
+  printf("Usage: %s [-e -c -p -v -d] filename [filesize | char_to_fill_data] [from] [to]\n", name);
     printf("   -e erase sparse file, replace data with char of zeros if no char provided\n");
     printf("   -r erase sparse file, replace data random values\n");
     printf("   -c create a spare file with data at the end and begining with size 0x%x or the specified one in bytes\n", FILE_SIZE);  
     printf("   -p print sparse file information\n");
+    printf("   -d dump file data from $from offset to $to offset (offset specified in bytes)\n");
     printf("   -v print sparse file information and data as string\n");
 }
 
 int main(int argc, char *argv[]) {
-  if ((argc != 3) && (argc != 4)) {
+  if ((argc != 3) && (argc != 4) && (argc != 5)) {
     print_usage(argv[0]);
 
     return -1;
@@ -221,6 +236,15 @@ int main(int argc, char *argv[]) {
     return print_holes(argv[2], 0);
   }
   else if (strcmp(argv[1], "-v") == 0) {
+    return print_holes(argv[2], 1);
+  }
+  else if (strcmp(argv[1], "-d") == 0) {
+    if (argc == 5) {
+      long from = atol(argv[3]);
+      long to = atol(argv[4]);
+      return print_file_data_from_filename(argv[2], from, to);
+    }
+
     return print_holes(argv[2], 1);
   }
   else {
