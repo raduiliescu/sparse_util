@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 
 #define FILE_SIZE (1<<30)
@@ -185,10 +186,10 @@ int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t
 }
 
 void print_usage(const char* name) {
-  printf("Usage: %s [-e -c -p -v] filename [char_to_fill_data]\n", name);
+  printf("Usage: %s [-e -c -p -v] filename [filesize | char_to_fill_data]\n", name);
     printf("   -e erase sparse file, replace data with char of zeros if no char provided\n");
     printf("   -r erase sparse file, replace data random values\n");
-    printf("   -c create a spare file with data at the end and begining with size 0x%x\n", FILE_SIZE);  
+    printf("   -c create a spare file with data at the end and begining with size 0x%x or the specified one in bytes\n", FILE_SIZE);  
     printf("   -p print sparse file information\n");
     printf("   -v print sparse file information and data as string\n");
 }
@@ -211,7 +212,10 @@ int main(int argc, char *argv[]) {
     return scrub_sparse_file(argv[2], generate_rand_block, 0);
   }
   else if (strcmp(argv[1], "-c") == 0) {
-    return create_sparse_file(argv[2], FILE_SIZE);
+    off_t size = FILE_SIZE;
+    if (argc == 4)
+      size = (off_t) atoi(argv[3]);
+    return create_sparse_file(argv[2], size);
   }
   else if (strcmp(argv[1], "-p") == 0) {
     return print_holes(argv[2], 0);
