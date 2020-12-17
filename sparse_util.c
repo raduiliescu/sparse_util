@@ -64,6 +64,7 @@ int print_file_data_from_filename(const char *filename, long from, long size) {
 
   print_file_data(fd, from, size);
 
+  close(fd);
   return 0;
 }
 
@@ -116,6 +117,30 @@ void generate_rand_block(void *block, size_t size, char c) {
   for (i = 0; i < size / (sizeof(int) / sizeof(char)); i++) {
     ((int *)block)[i] =  rand();
   }
+}
+
+int fill_file(char *filename, long from, long to, char c) {
+  int fd = open(filename, O_RDWR);
+  char *map = NULL;
+  int len = to - from;
+
+  if (fd < 0) {
+    perror("Could not open file");
+    return -1;
+  }
+  map = mmap(NULL, len, PROT_READ | PROT_WRITE , MAP_SHARED, fd, from);
+  if (map == MAP_FAILED) {
+    perror("Could not mmap file");
+    close(fd);
+    return -1;
+  }
+
+  memset(map, c, len);
+  msync(map, MS_SYNC, len);
+  munmap(map, len);
+
+  close(fd);
+  return 0;
 }
 
 int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t, char), char c) {
@@ -197,20 +222,19 @@ int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t
   return ret;
 }
 
-
-
 void print_usage(const char* name) {
-  printf("Usage: %s [-e -c -p -v -d] filename [filesize | char_to_fill_data] [from] [to]\n", name);
-    printf("   -e erase sparse file, replace data with char of zeros if no char provided\n");
-    printf("   -r erase sparse file, replace data random values\n");
-    printf("   -c create a spare file with data at the end and begining with size 0x%x or the specified one in bytes\n", FILE_SIZE);  
-    printf("   -p print sparse file information\n");
-    printf("   -d dump file data from $from offset to $to offset (offset specified in bytes)\n");
-    printf("   -v print sparse file information and data as string\n");
+  printf("Usage: %s [-e -c -p -d -s -v] filename [filesize | char_to_fill_data] [from] [to]\n", name);
+  printf("   -e erase sparse file, replace data with char of zeros if no char provided\n");
+  printf("   -r erase sparse file, replace data random values\n");
+  printf("   -c create a spare file with data at the end and begining with size 0x%x or the specified one in bytes\n", FILE_SIZE);  
+  printf("   -p print sparse file information\n");
+  printf("   -d dump file data from $from offset to $to offset (offset specified in bytes)\n");
+  printf("   -s fill file with $char_to_fill_data from $from offset to $to offset (offset specified in bytes)\n");
+  printf("   -v print sparse file information and data as string\n");
 }
 
 int main(int argc, char *argv[]) {
-  if ((argc != 3) && (argc != 4) && (argc != 5)) {
+  if ((argc != 3) && (argc != 4) && (argc != 5) && (argc != 6)) {
     print_usage(argv[0]);
 
     return -1;
@@ -246,6 +270,16 @@ int main(int argc, char *argv[]) {
     }
 
     return print_holes(argv[2], 1);
+  }
+  else if (strcmp(argv[1], "-s") == 0) {
+    if (argc != 6) {
+      print_usage(argv[0]);
+      return -1;
+    }
+    long from = atol(argv[4]);
+    long to = atol(argv[5]);
+
+    return fill_file(argv[2], from, to, argv[3][0]);
   }
   else {
     print_usage(argv[0]);
