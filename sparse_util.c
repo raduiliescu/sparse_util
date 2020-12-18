@@ -68,20 +68,13 @@ int print_file_data_from_filename(const char *filename, long from, long size) {
   return 0;
 }
 
-int print_holes(const char *filename, int verbose) {
-  int fd = open(filename, O_RDONLY);
+int __print_holes(int fd, int verbose) {
   struct stat buf;
   long data = 0;
   long hole = 0;
 
-  if (fd < 0) {
-    perror("Could not open file");
-    return -1;
-  }
-
   if (fstat(fd, &buf) < 0) {
     perror("Could not get file info");
-    close(fd);
     return -1;
   }
   printf("size %ld blocksize %ld blockcount %ld\n", buf.st_size, buf.st_blksize, buf.st_blocks);
@@ -103,9 +96,22 @@ int print_holes(const char *filename, int verbose) {
       print_file_data(fd, data, hole - data);
   } while(1);
 
-  close(fd);
-
   return 0;
+}
+
+int print_holes(const char *filename, int verbose) {
+  int fd = open(filename, O_RDONLY);
+  int ret;
+
+  if (fd < 0) {
+    perror("Could not open file");
+    return -1;
+  }
+
+  ret = __print_holes( fd, verbose);
+  
+  close(fd);
+  return ret;
 }
 
 void generate_char_block(void *block, size_t size, char c) {
@@ -119,15 +125,10 @@ void generate_rand_block(void *block, size_t size, char c) {
   }
 }
 
-int fill_file(char *filename, long from, long to, char c) {
-  int fd = open(filename, O_RDWR);
+int __fill_file(int fd, long from, long to, char c) {
   char *map = NULL;
   int len = to - from;
 
-  if (fd < 0) {
-    perror("Could not open file");
-    return -1;
-  }
   map = mmap(NULL, len, PROT_READ | PROT_WRITE , MAP_SHARED, fd, from);
   if (map == MAP_FAILED) {
     perror("Could not mmap file");
@@ -139,8 +140,22 @@ int fill_file(char *filename, long from, long to, char c) {
   msync(map, MS_SYNC, len);
   munmap(map, len);
 
-  close(fd);
   return 0;
+}
+
+int fill_file(char *filename, long from, long to, char c) {
+  int fd = open(filename, O_RDWR);
+  int ret;
+
+  if (fd < 0) {
+    perror("Could not open file");
+    return -1;
+  }
+
+  ret = __fill_file(fd, from, to, c);
+
+  close(fd);
+  return ret;
 }
 
 int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t, char), char c) {
@@ -222,15 +237,66 @@ int scrub_sparse_file(const char *filename, void (*generate_block)(void*, size_t
   return ret;
 }
 
-void print_usage(const char* name) {
-  printf("Usage: %s [-e -c -p -d -s -v] filename [filesize | char_to_fill_data] [from] [to]\n", name);
-  printf("   -e erase sparse file, replace data with char of zeros if no char provided\n");
+
+void print_options() {
+  printf("   -e [char] erase sparse file, replace data with char of zeros if no char provided\n");
   printf("   -r erase sparse file, replace data random values\n");
   printf("   -c create a spare file with data at the end and begining with size 0x%x or the specified one in bytes\n", FILE_SIZE);  
   printf("   -p print sparse file information\n");
-  printf("   -d dump file data from $from offset to $to offset (offset specified in bytes)\n");
-  printf("   -s fill file with $char_to_fill_data from $from offset to $to offset (offset specified in bytes)\n");
+  printf("   -d [from to] dump file data from $from offset to $to offset (offset specified in bytes)\n");
+  printf("   -s [char_to_fill from to]fill file with $char_to_fill_data from $from offset to $to offset (offset specified in bytes)\n");
   printf("   -v print sparse file information and data as string\n");
+}
+void print_usage(const char* name) {
+  printf("Usage: %s [-e -c -p -d -s -v] filename [filesize | char_to_fill_data] [from] [to]\n", name);
+  print_options();
+  printf("   -i open the utility in interactive mode\n");
+}
+
+int interactive(char * filename) {
+  int fd = open(filename, O_RDWR);
+
+  if (fd < 0) {
+    perror("Could not open file");
+    return -1;
+  }
+
+  while (1) {
+    char option[256];
+    long from = -11, to = -11;
+    char c[10];
+    scanf("%s", option);
+    printf("%s\n", option);
+    if (strcmp(option, "-p") == 0) {
+      __print_holes(fd, 0);
+    }
+    else if (strcmp(option, "-v") == 0) {
+      __print_holes(fd, 0);
+    }
+    else if (strcmp(option, "-d") == 0) {
+      scanf("%ld %ld", &from, &to);
+      print_file_data(fd, from, to);
+    }
+    else if (strcmp(option, "-s") == 0) {
+      scanf("%s %ld %ld", c, &from, &to);
+      printf("%s %ld %ld\n", c, from, to);
+      __fill_file(fd, c[0], from, to);
+    }
+    else if (strcmp(option, "-f") == 0) {
+      scanf("%s %ld", c, &from);
+      lseek(fd, from, SEEK_SET);
+      write(fd, c, 1);
+    }
+    else if (strcmp(option, "quit") == 0) {
+      break;
+    }
+    else {
+      print_options();
+    }
+  }
+
+  close(fd);
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -240,7 +306,10 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  if (strcmp(argv[1], "-e") == 0) {
+  if (strcmp(argv[1], "-i") == 0) {
+    return interactive(argv[2]);
+  }
+  else if (strcmp(argv[1], "-e") == 0) {
     char c = 0;
     if (argc == 4)
       c = argv[3][0];
@@ -276,6 +345,7 @@ int main(int argc, char *argv[]) {
       print_usage(argv[0]);
       return -1;
     }
+
     long from = atol(argv[4]);
     long to = atol(argv[5]);
 
